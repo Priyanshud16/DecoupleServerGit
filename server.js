@@ -1,58 +1,41 @@
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
-const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
-const mongoose = require('mongoose');
-require('dotenv').config();
-const fs = require('fs');
 
 const app = express();
-const MONGO_URI = process.env.MONGO_URI;
-const PORT = process.env.PORT || 5000;
-mongoose.connect(MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => console.log('MongoDB connected'))
-.catch(err => console.error('MongoDB connection error:', err));
+const PORT = process.env.PORT || 8000;
 
-
-const clipSchema = new mongoose.Schema({ filename: String, start: Number, end: Number });
-const Clip = mongoose.model('Clip', clipSchema);
-
-app.use(cors());
+app.use(cors()); // Allow requests from frontend
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'))); // Serve static files
 
+// Set up multer for file upload
 const storage = multer.diskStorage({
-  destination: './uploads',
-  filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname)),
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/'); // Save to 'uploads' folder
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = Date.now() + path.extname(file.originalname);
+    cb(null, uniqueName);
+  },
 });
 const upload = multer({ storage });
 
+// ✅ Upload Route
 app.post('/upload', upload.single('video'), (req, res) => {
- res.json({ url: `http://localhost:${PORT}/uploads/${req.file.filename}`, filename: req.file.filename });
-
-});
-
-app.post('/export', async (req, res) => {
-  const { filename, clips } = req.body;
-  for (let i = 0; i < clips.length; i++) {
-    const clip = clips[i];
-    const outputPath = `./uploads/clip_${i}_${filename}`;
-    await new Promise((resolve, reject) => {
-      ffmpeg(`./uploads/${filename}`)
-        .setStartTime(clip.start)
-        .setDuration(clip.end - clip.start)
-        .output(outputPath)
-        .on('end', () => resolve())
-        .on('error', (err) => reject(err))
-        .run();
-    });
-    await Clip.create({ filename: outputPath, start: clip.start, end: clip.end });
+  if (!req.file) {
+    return res.status(400).json({ message: 'No file uploaded' });
   }
-  res.json({ message: 'Clips exported successfully' });
+
+  const fileUrl = `https://decoupleservergit-1.onrender.com/uploads/${req.file.filename}`; // ✅ PUBLIC URL
+  return res.json({
+    url: fileUrl,
+    filename: req.file.filename,
+  });
 });
 
-app.listen(PORT, () => console.log(`Server running on ${PORT} DB is created sucessfully`));
+// ✅ Start Server
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
