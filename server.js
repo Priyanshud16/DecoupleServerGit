@@ -1,6 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
+const ffmpegPath = require('ffmpeg-static');
+const { exec } = require('child_process');
+
+
 const path = require('path');
 const fs = require('fs');
 
@@ -46,9 +50,7 @@ if (!fs.existsSync("./exports")) {
   fs.mkdirSync("./exports");
 }
 
-// ✅ Multer for upload (already set up in your case)
 
-// ✅ Export route
 app.post("/export", async (req, res) => {
   try {
     const { filename, clips } = req.body;
@@ -62,7 +64,7 @@ app.post("/export", async (req, res) => {
     const promises = clips.map((clip, index) => {
       const outputName = `${Date.now()}_clip${index + 1}.mp4`;
       const outputPath = path.join(__dirname, "exports", outputName);
-      const command = `ffmpeg -i "${inputPath}" -ss ${clip.start} -to ${clip.end} -c copy "${outputPath}"`;
+      const command = `"${ffmpegPath}" -i "${inputPath}" -ss ${clip.start} -to ${clip.end} -c copy "${outputPath}"`;
 
       exportPaths.push(`/exports/${outputName}`);
 
@@ -70,22 +72,25 @@ app.post("/export", async (req, res) => {
         exec(command, (error, stdout, stderr) => {
           if (error) {
             console.error(`FFmpeg error: ${error.message}`);
-            reject(error);
-          } else {
-            resolve();
+            return reject(error);
           }
+          resolve();
         });
       });
     });
 
     await Promise.all(promises);
 
-    return res.json({ message: "Clips exported", files: exportPaths });
+    res.json({
+      message: "Clips exported",
+      files: exportPaths,
+    });
   } catch (error) {
     console.error("Export error:", error);
-    return res.status(500).json({ message: "Export failed" });
+    res.status(500).json({ message: "Export failed" });
   }
 });
+
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
