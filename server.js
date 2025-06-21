@@ -3,6 +3,8 @@ const cors = require('cors');
 const multer = require('multer');
 const ffmpegPath = require('ffmpeg-static');
 const { exec } = require('child_process');
+const Export = require("./model/Export"); 
+
 
 
 const path = require('path');
@@ -69,7 +71,7 @@ app.post("/export", async (req, res) => {
       exportPaths.push(`/exports/${outputName}`);
 
       return new Promise((resolve, reject) => {
-        exec(command, (error, stdout, stderr) => {
+        exec(command, (error) => {
           if (error) {
             console.error(`FFmpeg error: ${error.message}`);
             return reject(error);
@@ -80,6 +82,9 @@ app.post("/export", async (req, res) => {
     });
 
     await Promise.all(promises);
+
+ 
+    await Export.create({ filename, clips });
 
     res.json({
       message: "Clips exported",
