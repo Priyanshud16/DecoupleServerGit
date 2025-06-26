@@ -13,7 +13,7 @@ const app = express();
 const PORT = process.env.PORT || 8000;
 
 // ✅ Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/videoeditor', {
+mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
@@ -47,7 +47,10 @@ app.post('/upload', upload.single('video'), (req, res) => {
   return res.json({ url: fileUrl, filename: req.file.filename });
 });
 
-// ✅ Export Clips Route
+
+
+
+
 app.post("/export", async (req, res) => {
   try {
     const { filename, clips } = req.body;
@@ -78,7 +81,6 @@ app.post("/export", async (req, res) => {
 
     await Promise.all(promises);
 
-    // ✅ Save export info to DB
     await Export.create({ filename, clips });
 
     res.json({
@@ -91,7 +93,64 @@ app.post("/export", async (req, res) => {
   }
 });
 
-// ✅ Start server
+app.put("/export", async (req, res) => {
+  try {
+    const { filename, clips } = req.body;
+
+    // Validate request body
+    if (!filename || !Array.isArray(clips) || clips.length === 0) {
+      return res.status(400).json({ message: "Invalid input" });
+    }
+
+    const inputPath = path.join(__dirname, "uploads", filename);
+
+    // Check if file exists (optional but recommended)
+    if (!fs.existsSync(inputPath)) {
+      return res.status(404).json({ message: "Input file not found" });
+    }
+
+    const exportPaths = [];
+
+    // Process each clip
+    const promises = clips.map((clip, index) => {
+      const outputName = `${Date.now()}_clip${index + 1}.mp4`;
+      const outputPath = path.join(__dirname, "exports", outputName);
+      const command = `"${ffmpegPath}" -i "${inputPath}" -ss ${clip.start} -to ${clip.end} -c copy "${outputPath}"`;
+
+      exportPaths.push(`/exports/${outputName}`);
+
+      return new Promise((resolve, reject) => {
+        exec(command, (error) => {
+          if (error) {
+            console.error(`FFmpeg error: ${error.message}`);
+            return reject(error);
+          }
+          resolve();
+        });
+      });
+    });
+
+    await Promise.all(promises);
+
+    // Either update or insert new export entry
+    const updated = await Export.findOneAndUpdate(
+      { filename },
+      { $set: { clips, exportedPaths: exportPaths } },
+      { upsert: true, new: true }
+    );
+
+    res.json({
+      message: "Clips processed successfully",
+      files: exportPaths,
+      exportEntry: updated,
+    });
+
+  } catch (error) {
+    console.error("Update error:", error);
+    res.status(500).json({ message: "Update failed", error: error.message });
+  }
+});
+
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(` Server running on ${PORT}`);
 });
