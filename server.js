@@ -47,7 +47,36 @@ app.post('/upload', upload.single('video'), (req, res) => {
   return res.json({ url: fileUrl, filename: req.file.filename });
 });
 
+app.get("/thumbnails/:filename", async (req, res) => {
+  const { filename } = req.params;
+  const inputPath = path.join(__dirname, "uploads", filename);
+  const thumbDir = path.join(__dirname, "uploads", "thumbnails", filename);
+  
+  if (!fs.existsSync(thumbDir)) fs.mkdirSync(thumbDir, { recursive: true });
 
+  const thumbPattern = path.join(thumbDir, "thumb-%03d.png");
+
+  const command = `"${ffmpegPath}" -i "${inputPath}" -vf "fps=1/1" "${thumbPattern}"`;
+
+  exec(command, (err) => {
+    if (err) {
+      console.error("FFmpeg thumbnail error:", err);
+      return res.status(500).json({ message: "Failed to extract thumbnails" });
+    }
+
+    fs.readdir(thumbDir, (err, files) => {
+      if (err) return res.status(500).json({ message: "Read error" });
+
+      const thumbnails = files.map(f =>
+        `${req.protocol}://${req.get("host")}/uploads/thumbnails/${filename}/${f}`
+      );
+      res.json({ thumbnails });
+    });
+  });
+});
+
+// Serve thumbnails statically
+app.use('/uploads/thumbnails', express.static(path.join(__dirname, 'uploads', 'thumbnails')));
 
 
 
@@ -93,63 +122,7 @@ app.post("/export", async (req, res) => {
   }
 });
 
-app.put("/export", async (req, res) => {
-  try {
-    const { filename, clips } = req.body;
 
-    // Validate request body
-    if (!filename || !Array.isArray(clips) || clips.length === 0) {
-      return res.status(400).json({ message: "Invalid input" });
-    }
-
-    const inputPath = path.join(__dirname, "uploads", filename);
-
-    // Check if file exists (optional but recommended)
-    if (!fs.existsSync(inputPath)) {
-      return res.status(404).json({ message: "Input file not found" });
-    }
-
-    const exportPaths = [];
-
-    // Process each clip
-    const promises = clips.map((clip, index) => {
-      const outputName = `${Date.now()}_clip${index + 1}.mp4`;
-      const outputPath = path.join(__dirname, "exports", outputName);
-      const command = `"${ffmpegPath}" -i "${inputPath}" -ss ${clip.start} -to ${clip.end} -c copy "${outputPath}"`;
-
-      exportPaths.push(`/exports/${outputName}`);
-
-      return new Promise((resolve, reject) => {
-        exec(command, (error) => {
-          if (error) {
-            console.error(`FFmpeg error: ${error.message}`);
-            return reject(error);
-          }
-          resolve();
-        });
-      });
-    });
-
-    await Promise.all(promises);
-
-    // Either update or insert new export entry
-    const updated = await Export.findOneAndUpdate(
-      { filename },
-      { $set: { clips, exportedPaths: exportPaths } },
-      { upsert: true, new: true }
-    );
-
-    res.json({
-      message: "Clips processed successfully",
-      files: exportPaths,
-      exportEntry: updated,
-    });
-
-  } catch (error) {
-    console.error("Update error:", error);
-    res.status(500).json({ message: "Update failed", error: error.message });
-  }
-});
 
 app.listen(PORT, () => {
   console.log(` Server running on ${PORT}`);
